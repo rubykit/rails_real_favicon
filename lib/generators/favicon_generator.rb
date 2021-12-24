@@ -12,11 +12,15 @@ class FaviconGenerator < Rails::Generators::Base
 
   class_option(:timeout, type: :numeric, aliases: '-t', default: 30)
 
+  def config
+    @config ||= RailsRealFavicon.config.deep_dup
+  end
+
   def generate_favicon
-    if File.exist?('config/favicon.yml') && defined?(Rails.application.config_for)
+    if File.exist?(config[:paths][:config_file_yml]) && defined?(Rails.application.config_for)
       req = Rails.application.config_for(:favicon)
     else
-      req = JSON.parse File.read('config/favicon.json')
+      req = JSON.parse File.read(config[:paths][:config_file_json])
     end
 
     req['api_key'] = API_KEY
@@ -25,7 +29,9 @@ class FaviconGenerator < Rails::Generators::Base
     req['files_location']['type'] = 'path'
     req['files_location']['path'] = PATH_UNIQUE_KEY
 
-    master_pic = File.expand_path(".") + '/' + req['master_picture']
+    config[:paths][:master_pic] ||= "#{ File.expand_path('.') }/#{ req['master_picture'] }"
+
+    master_pic = config[:paths][:master_pic]
     req['master_picture'] = Hash.new
     req['master_picture']['type'] = 'inline'
     req['master_picture']['content'] = Base64.encode64(File.binread(master_pic))
@@ -44,7 +50,7 @@ class FaviconGenerator < Rails::Generators::Base
     end
 
     zip = resp['favicon_generation_result']['favicon']['package_url']
-    FileUtils.mkdir_p('app/assets/images/favicon')
+    FileUtils.mkdir_p(config[:paths][:assets_dst])
 
     Dir.mktmpdir 'rfg' do |tmp_dir|
       download_package zip, tmp_dir
@@ -55,14 +61,14 @@ class FaviconGenerator < Rails::Generators::Base
           content = replace_url_by_asset_path content
           new_ext = '.erb'
         end
-        create_file "app/assets/images/favicon/#{File.basename file}#{new_ext}", content
+        create_file "#{config[:paths][:assets_dst]}/#{File.basename file}#{new_ext}", content
       end
     end
 
-    create_file "app/views/application/_favicon.html.erb",
+    create_file config[:paths][:html_helper_dst],
       replace_url_by_asset_path(resp['favicon_generation_result']['favicon']['html_code'])
 
-      create_file "config/initializers/web_app_manifest.rb",
+      create_file config[:paths][:initializer_dst],
         File.read(File.dirname(__FILE__) + '/web_app_manifest_initializer.txt')
   end
 
